@@ -31,6 +31,8 @@ import android.support.v4.app.FragmentActivity;
 import android.text.TextUtils;
 import android.util.Log;
 
+import com.okta.oidc.model.AuthenticatePayload;
+import com.okta.oidc.model.Tokens;
 import com.okta.oidc.net.HttpConnection;
 import com.okta.oidc.net.HttpConnectionFactory;
 import com.okta.oidc.net.request.AuthorizedRequest;
@@ -64,28 +66,16 @@ import static com.okta.oidc.util.AuthorizationException.RegistrationRequestError
 
 public final class AuthenticateClient {
     private static final String TAG = AuthenticateClient.class.getSimpleName();
-    private static final String AUTH_REQUEST_PREF = "AuthRequest";
-    private static final String AUTH_RESPONSE_PREF = "AuthResponse";
-    //need to restore auth.
-    private static final String AUTH_RESTORE_PREF = AuthenticateClient.class.getCanonicalName() + ".AuthRestore";
 
     private WeakReference<FragmentActivity> mActivity;
     private OIDCAccount mOIDCAccount;
-    private Map<String, String> mAdditionalParams;
+    private OktaState mOktaState;
     private int mCustomTabColor;
-    private String mState;
-    private String mLoginHint;
-    private OktaRepository mOktaRepo;
 
     private RequestDispatcher mDispatcher;
-    private WebRequest mAuthorizeRequest;
-    private WebResponse mAuthResponse;
-
     private HttpConnectionFactory mConnectionFactory;
     private ResultCallback<AuthorisationStatus, AuthorizationException> mResultCb;
     private HttpRequest mCurrentHttpRequest;
-    public static final int REQUEST_CODE_SIGN_IN = 100;
-    public static final int REQUEST_CODE_SIGN_OUT = 101;
     //Hold the exception to send to onActivityResult
     private AuthorizationException mErrorActivityResult;
 
@@ -93,10 +83,7 @@ public final class AuthenticateClient {
         mConnectionFactory = builder.mConnectionFactory;
         mOIDCAccount = builder.mOIDCAccount;
         mCustomTabColor = builder.mCustomTabColor;
-        mAdditionalParams = builder.mAdditionalParams;
-        mState = builder.mState;
-        mLoginHint = builder.mLoginHint;
-        mOktaRepo = builder.mOktaRepo;
+        mOktaState = new OktaState(builder.mOktaRepo);
         mDispatcher = new RequestDispatcher(builder.mCallbackExecutor);
     }
 
@@ -114,7 +101,7 @@ public final class AuthenticateClient {
             @Override
             public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
                 if (mActivity != null && mActivity.get() == activity) {
-                    persist();
+
                 }
             }
 
@@ -128,20 +115,6 @@ public final class AuthenticateClient {
         });
     }
 
-    private void persist() {
-        mOktaRepo.save(mAuthorizeRequest);
-    }
-
-    private void restore() {
-        mAuthorizeRequest = (WebRequest) mOktaRepo.restore(WebRequest.RESTORE);
-    }
-
-    private void clearPreferences() {
-        mOktaRepo.delete(mAuthorizeRequest);
-        mOktaRepo.delete(mAuthResponse);
-
-    }
-
     private void cancelCurrentRequest() {
         if (mCurrentHttpRequest != null) {
             mCurrentHttpRequest.cancelRequest();
@@ -151,28 +124,33 @@ public final class AuthenticateClient {
 
     public ConfigurationRequest configurationRequest() {
         cancelCurrentRequest();
-        mCurrentHttpRequest = HttpRequestBuilder.newRequest()
+        mCurrentHttpRequest = HttpRequestBuilder.newRequest(isLoggedIn())
                 .request(HttpRequest.Type.CONFIGURATION)
                 .connectionFactory(mConnectionFactory)
-                .account(mOIDCAccount).createRequest();
+                .account(mOIDCAccount)
+                .createRequest();
         return (ConfigurationRequest) mCurrentHttpRequest;
     }
 
     public AuthorizedRequest userProfileRequest() {
         cancelCurrentRequest();
-        mCurrentHttpRequest = HttpRequestBuilder.newRequest()
+        mCurrentHttpRequest = HttpRequestBuilder.newRequest(isLoggedIn())
                 .request(HttpRequest.Type.PROFILE)
                 .connectionFactory(mConnectionFactory)
-                .account(mOIDCAccount).createRequest();
+                .account(mOIDCAccount)
+                .tokenResponse(mOktaState.getTokenResponse())
+                .providerConfiguration(mOktaState.getProviderConfiguration())
+                .createRequest();
         return (AuthorizedRequest) mCurrentHttpRequest;
     }
 
     public RevokeTokenRequest revokeTokenRequest(String token) {
         cancelCurrentRequest();
-        mCurrentHttpRequest = HttpRequestBuilder.newRequest()
+        mCurrentHttpRequest = HttpRequestBuilder.newRequest(isLoggedIn())
                 .request(HttpRequest.Type.REVOKE_TOKEN)
                 .connectionFactory(mConnectionFactory)
                 .tokenToRevoke(token)
+                .providerConfiguration(mOktaState.getProviderConfiguration())
                 .account(mOIDCAccount).createRequest();
         return (RevokeTokenRequest) mCurrentHttpRequest;
     }
@@ -180,10 +158,12 @@ public final class AuthenticateClient {
     public AuthorizedRequest authorizedRequest(@NonNull Uri uri, @Nullable Map<String, String> properties, @Nullable Map<String, String> postParameters,
                                                @NonNull HttpConnection.RequestMethod method) {
         cancelCurrentRequest();
-        mCurrentHttpRequest = HttpRequestBuilder.newRequest()
+        mCurrentHttpRequest = HttpRequestBuilder.newRequest(isLoggedIn())
                 .request(HttpRequest.Type.AUTHORIZED)
                 .connectionFactory(mConnectionFactory)
                 .account(mOIDCAccount)
+                .providerConfiguration(mOktaState.getProviderConfiguration())
+                .tokenResponse(mOktaState.getTokenResponse())
                 .uri(uri)
                 .properties(properties)
                 .postParameters(postParameters)
@@ -203,15 +183,19 @@ public final class AuthenticateClient {
 
     @AnyThread
     public void logIn(@NonNull final FragmentActivity activity) {
-        if (mOIDCAccount.obtainNewConfiguration()) {
+        logIn(activity, new AuthenticatePayload.Builder().create());
+    }
+
+    @AnyThread
+    public void logIn(@NonNull final FragmentActivity activity, @NonNull AuthenticatePayload authenticatePayload ) {
+        if (obtainNewConfiguration(mOktaState.getProviderConfiguration(), mOIDCAccount)) {
             ConfigurationRequest request = configurationRequest();
             mCurrentHttpRequest = request;
             request.dispatchRequest(mDispatcher, new RequestCallback<ProviderConfiguration, AuthorizationException>() {
                 @Override
                 public void onSuccess(@NonNull ProviderConfiguration result) {
-                    mOktaRepo.save(result);
-                    mOIDCAccount.setProviderConfig(result);
-                    authorizationRequest(activity);
+                    mOktaState.save(result);
+                    authorizationRequest(activity, authenticatePayload);
                 }
 
                 @Override
@@ -219,40 +203,69 @@ public final class AuthenticateClient {
                     Log.w(TAG, "can't obtain discovery doc", exception);
                     mErrorActivityResult = exception;
                     //Authorize anyways the error will be passed to app.
-                    authorizationRequest(activity);
+                    authorizationRequest(activity, authenticatePayload);
                 }
             });
         } else {
-            authorizationRequest(activity);
+            authorizationRequest(activity, authenticatePayload);
         }
     }
 
     @AnyThread
-    public void logOut(@NonNull final FragmentActivity activity) {
-        if (mOIDCAccount.isLoggedIn()) {
+    public void signOutFromOkta(@NonNull final FragmentActivity activity) {
+        if (isLoggedIn()) {
             registerActivityLifeCycle(activity);
-            mAuthorizeRequest = new LogoutRequest.Builder().account(mOIDCAccount)
+            WebRequest authorizeRequest = new LogoutRequest.Builder()
+                    .provideConfiguration(mOktaState.getProviderConfiguration())
+                    .tokenResponse(mOktaState.getTokenResponse())
+                    .account(mOIDCAccount)
                     .state(CodeVerifierUtil.generateRandomState())
                     .create();
-            OktaResultFragment.createLogouttFragment(mAuthorizeRequest, mCustomTabColor,
+            mOktaState.save(authorizeRequest);
+            OktaResultFragment.createLogoutFragment(mOktaState.getAuthorizeRequest(), mCustomTabColor,
                     activity, this);
         }
     }
 
-    private void authorizationRequest(FragmentActivity activity) {
+    public void clear() {
+        mOktaState.delete(mOktaState.getProviderConfiguration());
+        mOktaState.delete(mOktaState.getTokenResponse());
+        mOktaState.delete(mOktaState.getAuthorizeRequest());
+        mResultCb.onSuccess(AuthorisationStatus.LOGGED_OUT);
+    }
+
+    private void authorizationRequest(FragmentActivity activity, @Nullable AuthenticatePayload authenticatePayload) {
         registerActivityLifeCycle(activity);
-        if (mOIDCAccount.obtainNewConfiguration()) {
-            mAuthorizeRequest = createAuthorizeRequest();
+        // createAuthorizeRequest() method require condition mOIDCAccount.getProviderConfig()!= null
+        ProviderConfiguration providerConfiguration = mOktaState.getProviderConfiguration();
+        if (providerConfiguration != null && obtainNewConfiguration(providerConfiguration, mOIDCAccount)) {
+            WebRequest authorizeRequest = createAuthorizeRequest(authenticatePayload);
+            mOktaState.save(authorizeRequest);
             if (!isRedirectUrisRegistered(mOIDCAccount.getRedirectUri())) {
                 Log.e(TAG, "No uri registered to handle redirect or multiple applications registered");
                 //FIXME move error to listener
                 mErrorActivityResult = INVALID_REDIRECT_URI;
             }
-            OktaResultFragment.createLoginFragment(mAuthorizeRequest, mCustomTabColor,
+            OktaResultFragment.createLoginFragment(mOktaState.getAuthorizeRequest(), mCustomTabColor,
                     activity, this);
         } else {
             mErrorActivityResult = AuthorizationException.GeneralErrors.INVALID_DISCOVERY_DOCUMENT;
+            postResult(OktaResultFragment.Result.exception(mErrorActivityResult));
         }
+    }
+
+    public boolean isLoggedIn() {
+        TokenResponse tokenResponse = mOktaState.getTokenResponse();
+        return tokenResponse != null && (tokenResponse.getAccessToken() != null
+                || tokenResponse.getIdToken() != null);
+    }
+
+    public Tokens getTokens() {
+        return new Tokens(mOktaState.getTokenResponse());
+    }
+
+    private boolean obtainNewConfiguration(ProviderConfiguration providerConfiguration, OIDCAccount account) {
+        return (providerConfiguration == null || !providerConfiguration.issuer.equals(account.getDiscoveryUri()));
     }
 
     void postResult(OktaResultFragment.Result result) {
@@ -266,29 +279,25 @@ public final class AuthenticateClient {
                     break;
                 case AUTHORIZED:
                     if (validateResult(result.getAuthorizationResponse())) {
-                        tokenExchange();
+                        tokenExchange((AuthorizeResponse) result.getAuthorizationResponse());
                     }
                     break;
                 case LOGGED_OUT:
-                    clearPreferences();
-                    mOIDCAccount = null;
-                    mResultCb.onSuccess(AuthorisationStatus.LOGGED_OUT);
+                    mOktaState.delete(mOktaState.getAuthorizeRequest());
+                    mResultCb.onSuccess(AuthorisationStatus.BROWSER_SESSION_OUT);
                     break;
             }
         }
     }
 
     private boolean validateResult(WebResponse authResponse) {
-        mAuthResponse = authResponse;
-        if (mAuthorizeRequest == null && mActivity.get() != null) {
-            restore();
-            if (mAuthorizeRequest == null) {
-                mResultCb.onError("Response error", AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW);
-                return false;
-            }
+        WebRequest authorizedRequest = mOktaState.getAuthorizeRequest();
+        if (authorizedRequest == null && mActivity.get() != null) {
+            mResultCb.onError("Response error", AuthorizationException.GeneralErrors.USER_CANCELED_AUTH_FLOW);
+            return false;
         }
 
-        String requestState = mAuthorizeRequest.getState();
+        String requestState = authorizedRequest.getState();
         String responseState = authResponse.getState();
         if (requestState == null && responseState != null
                 || (requestState != null && !requestState
@@ -299,18 +308,20 @@ public final class AuthenticateClient {
         return true;
     }
 
-
-    private AuthorizeRequest createAuthorizeRequest() {
+    private AuthorizeRequest createAuthorizeRequest(@Nullable AuthenticatePayload authenticatePayload) {
         AuthorizeRequest.Builder builder = new AuthorizeRequest.Builder();
+        builder.providerConfiguration(mOktaState.getProviderConfiguration());
         builder.account(mOIDCAccount);
-        if (mAdditionalParams != null) {
-            builder.additionalParams(mAdditionalParams);
-        }
-        if (!TextUtils.isEmpty(mState)) {
-            builder.state(mState);
-        }
-        if (!TextUtils.isEmpty(mLoginHint)) {
-            builder.state(mLoginHint);
+        if(authenticatePayload != null) {
+            if (authenticatePayload.getAdditionalParams() != null) {
+                builder.additionalParams(authenticatePayload.getAdditionalParams());
+            }
+            if (!TextUtils.isEmpty(authenticatePayload.getState())) {
+                builder.state(authenticatePayload.getState());
+            }
+            if (!TextUtils.isEmpty(authenticatePayload.getLoginHint())) {
+                builder.state(authenticatePayload.getLoginHint());
+            }
         }
         return builder.create();
     }
@@ -322,17 +333,18 @@ public final class AuthenticateClient {
     }
 
     @WorkerThread
-    private void tokenExchange() {
-        mCurrentHttpRequest = HttpRequestBuilder.newRequest().request(TOKEN_EXCHANGE).account(mOIDCAccount)
-                .authRequest((AuthorizeRequest) mAuthorizeRequest)
-                .authResponse((AuthorizeResponse) mAuthResponse)
+    private void tokenExchange(AuthorizeResponse authorizeResponse) {
+        mCurrentHttpRequest = HttpRequestBuilder.newRequest(isLoggedIn()).request(TOKEN_EXCHANGE)
+                .providerConfiguration(mOktaState.getProviderConfiguration())
+                .account(mOIDCAccount)
+                .authRequest((AuthorizeRequest) mOktaState.getAuthorizeRequest())
+                .authResponse((AuthorizeResponse) authorizeResponse)
                 .createRequest();
 
         ((TokenRequest) mCurrentHttpRequest).dispatchRequest(mDispatcher, new RequestCallback<TokenResponse, AuthorizationException>() {
             @Override
             public void onSuccess(@NonNull TokenResponse result) {
-                mOktaRepo.save(result);
-                mOIDCAccount.setTokenResponse(result);
+                mOktaState.save(result);
                 mResultCb.onSuccess(AuthorisationStatus.AUTHORIZED);
             }
 
@@ -376,30 +388,18 @@ public final class AuthenticateClient {
         private Executor mCallbackExecutor;
         private HttpConnectionFactory mConnectionFactory;
         private OIDCAccount mOIDCAccount;
-        private Map<String, String> mAdditionalParams;
         private int mCustomTabColor;
-        private String mState;
-        private String mLoginHint;
         private OktaRepository mOktaRepo;
 
         public Builder() {
         }
 
         public AuthenticateClient create() {
-            ProviderConfiguration configuration = (ProviderConfiguration) mOktaRepo.restore(ProviderConfiguration.RESTORE);
-            TokenResponse response = (TokenResponse) mOktaRepo.restore(TokenResponse.RESTORE);
-            mOIDCAccount.setProviderConfig(configuration);
-            mOIDCAccount.setTokenResponse(response);
             return new AuthenticateClient(this);
         }
 
         public Builder withAccount(@NonNull OIDCAccount account) {
             mOIDCAccount = account;
-            return this;
-        }
-
-        public Builder withParameters(@NonNull Map<String, String> parameters) {
-            mAdditionalParams = parameters;
             return this;
         }
 
@@ -413,16 +413,6 @@ public final class AuthenticateClient {
             return this;
         }
 
-        public Builder withState(@NonNull String state) {
-            mState = state;
-            return this;
-        }
-
-        public Builder withLoginHint(@NonNull String loginHint) {
-            mLoginHint = loginHint;
-            return this;
-        }
-
         public Builder callbackExecutor(Executor executor) {
             mCallbackExecutor = executor;
             return this;
@@ -432,6 +422,5 @@ public final class AuthenticateClient {
             mConnectionFactory = connectionFactory;
             return this;
         }
-
     }
 }

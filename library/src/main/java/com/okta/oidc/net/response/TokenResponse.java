@@ -16,10 +16,12 @@ package com.okta.oidc.net.response;
 
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
+import android.support.annotation.RestrictTo;
 
 import com.google.gson.Gson;
 import com.okta.oidc.storage.Persistable;
 
+@RestrictTo(RestrictTo.Scope.LIBRARY_GROUP)
 public class TokenResponse implements Persistable {
     private String access_token;
     private String token_type;
