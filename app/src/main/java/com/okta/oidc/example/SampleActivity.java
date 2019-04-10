@@ -39,6 +39,18 @@ import com.okta.oidc.util.AuthorizationException;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
+
+import javax.crypto.NoSuchPaddingException;
+
 import androidx.annotation.ColorRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
@@ -257,12 +269,20 @@ public class SampleActivity extends AppCompatActivity {
                 .discoveryUri("https://samples-test.oktapreview.com")
                 .create();
 
-        mOktaAuth = new AuthenticateClient.Builder()
-                .withAccount(mOktaAccount)
-                .withContext(getApplicationContext())
-                .withStorage(new SimpleOktaStorage(this))
-                .withTabColor(getColorCompat(R.color.colorPrimary))
-                .create();
+        try {
+            mOktaAuth = new AuthenticateClient.Builder()
+                    .withAccount(mOktaAccount)
+                    .withContext(getApplicationContext())
+                    .withStorage(new SimpleOktaStorage(this))
+                    .withTabColor(getColorCompat(R.color.colorPrimary))
+                    .create();
+        } catch (IOException e) {
+            Log.e(TAG, "onCreate: ", e);
+            return;
+        } catch (GeneralSecurityException e) {
+            Log.e(TAG, "onCreate: ", e);
+            return;
+        }
 
         if (mOktaAuth.isLoggedIn()) {
             showAuthorizedMode();

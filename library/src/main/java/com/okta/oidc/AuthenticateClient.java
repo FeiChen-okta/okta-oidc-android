@@ -26,12 +26,24 @@ import com.okta.oidc.net.response.TokenResponse;
 import com.okta.oidc.results.AuthorizationResult;
 import com.okta.oidc.results.Result;
 import com.okta.oidc.storage.OktaStorage;
+import com.okta.oidc.storage.SimpleEncryptionManager;
+import com.okta.oidc.storage.security.EncryptionManager;
 import com.okta.oidc.util.AuthorizationException;
 
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.lang.ref.WeakReference;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.NoSuchProviderException;
+import java.security.UnrecoverableEntryException;
+import java.security.cert.CertificateException;
 import java.util.concurrent.Executor;
+
+import javax.crypto.NoSuchPaddingException;
 
 import androidx.annotation.AnyThread;
 import androidx.annotation.ColorInt;
@@ -51,7 +63,7 @@ public final class AuthenticateClient {
     private AuthenticateClient(@NonNull Builder builder) {
         mAuthClient = new SyncAuthenticationClient(builder.mConnectionFactory, builder.mOIDCAccount,
                 builder.mCustomTabColor, builder.mStorage, builder.mContext,
-                builder.mSupportedBrowsers);
+                builder.mSupportedBrowsers, builder.encryptionManager);
         mDispatcher = new RequestDispatcher(builder.mCallbackExecutor);
     }
 
@@ -168,11 +180,15 @@ public final class AuthenticateClient {
         private OktaStorage mStorage;
         private Context mContext;
         private String[] mSupportedBrowsers;
+        private EncryptionManager encryptionManager;
 
         public Builder() {
         }
 
-        public AuthenticateClient create() {
+        public AuthenticateClient create() throws IOException, CertificateException, NoSuchAlgorithmException, InvalidKeyException, UnrecoverableEntryException, InvalidAlgorithmParameterException, NoSuchPaddingException, NoSuchProviderException, KeyStoreException {
+            if (encryptionManager == null) {
+                encryptionManager = new SimpleEncryptionManager(mContext);
+            }
             return new AuthenticateClient(this);
         }
 
@@ -209,6 +225,11 @@ public final class AuthenticateClient {
 
         public Builder supportedBrowsers(String... browsers) {
             mSupportedBrowsers = browsers;
+            return this;
+        }
+
+        public Builder withEncryptionManager(EncryptionManager encryptionManager) {
+            this.encryptionManager = encryptionManager;
             return this;
         }
     }

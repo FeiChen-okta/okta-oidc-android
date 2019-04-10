@@ -43,6 +43,7 @@ import com.okta.oidc.results.AuthorizationResult;
 import com.okta.oidc.results.Result;
 import com.okta.oidc.storage.OktaRepository;
 import com.okta.oidc.storage.OktaStorage;
+import com.okta.oidc.storage.security.EncryptionManager;
 import com.okta.oidc.util.AuthorizationException;
 import com.okta.oidc.util.CodeVerifierUtil;
 
@@ -73,11 +74,11 @@ public class SyncAuthenticationClient {
 
     SyncAuthenticationClient(HttpConnectionFactory factory, OIDCAccount account,
                              int customTabColor, OktaStorage storage,
-                             Context context, String[] browsers) {
+                             Context context, String[] browsers, EncryptionManager encryptionManager) {
         mConnectionFactory = factory;
         mOIDCAccount = account;
         mCustomTabColor = customTabColor;
-        mOktaState = new OktaState(new OktaRepository(storage, context));
+        mOktaState = new OktaState(new OktaRepository(storage, encryptionManager));
         mSupportedBrowsers = browsers;
     }
 

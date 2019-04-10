@@ -7,6 +7,7 @@ import com.okta.oidc.net.request.web.AuthorizeRequest;
 import com.okta.oidc.net.request.web.WebRequest;
 import com.okta.oidc.net.response.TokenResponse;
 import com.okta.oidc.storage.OktaRepository;
+import com.okta.oidc.util.EncryptionManagerDummy;
 import com.okta.oidc.util.OktaStorageMock;
 import com.okta.oidc.util.TestValues;
 
@@ -36,7 +37,8 @@ public class OktaStateTest {
     public void setUp() throws Exception {
         mContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
         mOktaStorageMock = new OktaStorageMock();
-        mOktaRepository = new OktaRepository(mOktaStorageMock, mContext);
+
+        mOktaRepository = new OktaRepository(mOktaStorageMock, new EncryptionManagerDummy());
         mOktaState = new OktaState(mOktaRepository);
     }
 
