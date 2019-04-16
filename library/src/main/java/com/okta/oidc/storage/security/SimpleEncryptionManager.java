@@ -13,7 +13,7 @@
  * License.
  */
 
-package com.okta.oidc.storage;
+package com.okta.oidc.storage.security;
 
 import android.annotation.TargetApi;
 import android.content.Context;
@@ -23,8 +23,6 @@ import android.security.KeyPairGeneratorSpec;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.Base64;
-
-import com.okta.oidc.storage.security.EncryptionManager;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;

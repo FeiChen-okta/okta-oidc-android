@@ -26,7 +26,7 @@ import com.okta.oidc.net.response.TokenResponse;
 import com.okta.oidc.results.AuthorizationResult;
 import com.okta.oidc.results.Result;
 import com.okta.oidc.storage.OktaStorage;
-import com.okta.oidc.storage.SimpleEncryptionManager;
+import com.okta.oidc.storage.security.SimpleEncryptionManager;
 import com.okta.oidc.storage.security.EncryptionManager;
 import com.okta.oidc.util.AuthorizationException;
 

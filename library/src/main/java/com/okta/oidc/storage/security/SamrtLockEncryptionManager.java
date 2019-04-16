@@ -18,6 +18,7 @@ import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
@@ -34,11 +35,13 @@ import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresApi;
 import androidx.core.hardware.fingerprint.FingerprintManagerCompat;
 
-public class SamrtLockEncrtiptionManager implements EncryptionManager {
+public class SamrtLockEncryptionManager implements EncryptionManager {
 
-    private static final String TAG = SamrtLockEncrtiptionManager.class.getSimpleName();
+    private static final String TAG = SamrtLockEncryptionManager.class.getSimpleName();
+    private final static String DEFAULT_CHARSET = "UTF-8";
 
     private static final String KEY_ALIAS = "key_for_pin";
     private static final String KEY_STORE = "AndroidKeyStore";
@@ -48,20 +51,26 @@ public class SamrtLockEncrtiptionManager implements EncryptionManager {
     private KeyPairGenerator mKeyPairGenerator;
     private Cipher mCipher;
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     public String encrypt(String inputString) throws GeneralSecurityException {
-        if (prepare() && initCipher(Cipher.ENCRYPT_MODE)) {
-            byte[] bytes = mCipher.doFinal(inputString.getBytes());
-            return Base64.encodeToString(bytes, Base64.NO_WRAP);
+        if (inputString != null && inputString.length() > 0) {
+            if (prepare() && initCipher(Cipher.ENCRYPT_MODE)) {
+                byte[] bytes = mCipher.doFinal(inputString.getBytes());
+                return Base64.encodeToString(bytes, Base64.NO_WRAP);
+            }
         }
         return inputString;
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Override
     public String decrypt(String encodedString) throws GeneralSecurityException {
-        if (prepare() && initCipher(Cipher.ENCRYPT_MODE)) {
-            byte[] bytes = Base64.decode(encodedString, Base64.NO_WRAP);
-            return new String(mCipher.doFinal(bytes));
+        if (encodedString != null && encodedString.length() > 0) {
+            if (prepare() && initCipher(Cipher.ENCRYPT_MODE)) {
+                byte[] bytes = Base64.decode(encodedString, Base64.NO_WRAP);
+                return new String(mCipher.doFinal(bytes));
+            }
         }
         return encodedString;
     }
@@ -139,6 +148,7 @@ public class SamrtLockEncrtiptionManager implements EncryptionManager {
     }
 
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     private boolean initCipher(int mode) {
         try {
             mKeyStore.load(null);
@@ -193,6 +203,7 @@ public class SamrtLockEncrtiptionManager implements EncryptionManager {
         }
     }
 
+    @RequiresApi(api = Build.VERSION_CODES.M)
     @Nullable
     public FingerprintManagerCompat.CryptoObject getCryptoObject() {
         if (prepare() && initCipher(Cipher.DECRYPT_MODE)) {
@@ -201,8 +212,26 @@ public class SamrtLockEncrtiptionManager implements EncryptionManager {
         return null;
     }
 
+    public void setCipher(Cipher cipher){
+        this.mCipher = cipher;
+    }
+
     @Override
     public String getHashed(String value) throws NoSuchAlgorithmException, UnsupportedEncodingException {
-        return null;
+        final MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+
+        byte[] result = digest.digest(value.getBytes(DEFAULT_CHARSET));
+
+        return toHex(result);
+    }
+
+    private static String toHex(byte[] data) {
+        StringBuilder sb = new StringBuilder();
+
+        for (byte b : data) {
+            sb.append(String.format("%02X", b));
+        }
+
+        return sb.toString();
     }
 }

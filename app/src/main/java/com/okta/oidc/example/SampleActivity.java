@@ -16,6 +16,7 @@
 package com.okta.oidc.example;
 
 import android.annotation.TargetApi;
+import android.content.Context;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -24,6 +25,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.okta.oidc.AuthenticateClient;
 import com.okta.oidc.AuthenticationPayload;
@@ -35,6 +37,8 @@ import com.okta.oidc.Tokens;
 import com.okta.oidc.net.params.TokenTypeHint;
 import com.okta.oidc.net.response.IntrospectResponse;
 import com.okta.oidc.storage.SimpleOktaStorage;
+import com.okta.oidc.storage.security.FingerprintUtils;
+import com.okta.oidc.storage.security.SamrtLockEncryptionManager;
 import com.okta.oidc.util.AuthorizationException;
 
 import org.json.JSONObject;
@@ -49,12 +53,16 @@ import java.security.NoSuchProviderException;
 import java.security.UnrecoverableEntryException;
 import java.security.cert.CertificateException;
 
+import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
 
 import androidx.annotation.ColorRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.hardware.fingerprint.FingerprintManagerCompat;
+import androidx.core.os.CancellationSignal;
 
 public class SampleActivity extends AppCompatActivity {
 
@@ -62,6 +70,7 @@ public class SampleActivity extends AppCompatActivity {
     @VisibleForTesting
     AuthenticateClient mOktaAuth;
     private OIDCAccount mOktaAccount;
+    private SamrtLockEncryptionManager mEncryptionManager;
     private TextView mTvStatus;
     private Button mSignIn;
     private Button mSignOut;
@@ -76,6 +85,7 @@ public class SampleActivity extends AppCompatActivity {
     private Button mIntrospectId;
 
     private ProgressBar mProgressBar;
+    private FingerprintHelper mFingerprintHelper;
     private static final String FIRE_FOX = "org.mozilla.firefox";
 
     private LinearLayout mRevokeContainer;
@@ -261,28 +271,7 @@ public class SampleActivity extends AppCompatActivity {
 
 
         //samples sdk test
-        mOktaAccount = new OIDCAccount.Builder()
-                .clientId("0oajqehiy6p81NVzA0h7")
-                .redirectUri("com.oktapreview.samples-test:/callback")
-                .endSessionRedirectUri("com.oktapreview.samples-test:/logout")
-                .scopes("openid", "profile", "offline_access")
-                .discoveryUri("https://samples-test.oktapreview.com")
-                .create();
-
-        try {
-            mOktaAuth = new AuthenticateClient.Builder()
-                    .withAccount(mOktaAccount)
-                    .withContext(getApplicationContext())
-                    .withStorage(new SimpleOktaStorage(this))
-                    .withTabColor(getColorCompat(R.color.colorPrimary))
-                    .create();
-        } catch (IOException e) {
-            Log.e(TAG, "onCreate: ", e);
-            return;
-        } catch (GeneralSecurityException e) {
-            Log.e(TAG, "onCreate: ", e);
-            return;
-        }
+        mOktaAuth = buildClient();
 
         if (mOktaAuth.isLoggedIn()) {
             showAuthorizedMode();
@@ -320,10 +309,67 @@ public class SampleActivity extends AppCompatActivity {
         }, this);
     }
 
+    private AuthenticateClient buildClient(){
+
+        mOktaAccount = new OIDCAccount.Builder()
+                .clientId("0oajqehiy6p81NVzA0h7")
+                .redirectUri("com.oktapreview.samples-test:/callback")
+                .endSessionRedirectUri("com.oktapreview.samples-test:/logout")
+                .scopes("openid", "profile", "offline_access")
+                .discoveryUri("https://samples-test.oktapreview.com")
+                .create();
+
+        AuthenticateClient.Builder builder = new AuthenticateClient.Builder()
+                .withAccount(mOktaAccount)
+                .withContext(getApplicationContext())
+                .withStorage(new SimpleOktaStorage(this))
+                .withTabColor(getColorCompat(R.color.colorPrimary));
+
+        if (FingerprintUtils.checkFingerprintCompatibility(this)) {
+            mEncryptionManager = new SamrtLockEncryptionManager();
+            builder.withEncryptionManager(mEncryptionManager);
+        }
+        try {
+            return builder.create();
+        } catch (IOException e) {
+            Log.e(TAG, "onCreate: ", e);
+        } catch (GeneralSecurityException e) {
+            Log.e(TAG, "onCreate: ", e);
+        }
+        return null;
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (mEncryptionManager != null) {
+            prepareSensor();
+        }
+    }
+
+    @RequiresApi(api = Build.VERSION_CODES.M)
+    private void prepareSensor() {
+        if (FingerprintUtils.isSensorStateAt(FingerprintUtils.SensorState.READY, this)) {
+            FingerprintManagerCompat.CryptoObject cryptoObject = mEncryptionManager.getCryptoObject();
+            if (cryptoObject != null) {
+                Toast.makeText(this, "use fingerprint to login", Toast.LENGTH_LONG).show();
+                mFingerprintHelper = new FingerprintHelper(this);
+                mFingerprintHelper.startAuth(cryptoObject);
+            } else {
+                Toast.makeText(this, "new fingerprint enrolled. enter pin again", Toast.LENGTH_SHORT).show();
+            }
+
+        }
+    }
+
     @Override
     protected void onStop() {
         super.onStop();
         mProgressBar.setVisibility(View.GONE);
+        if (mFingerprintHelper != null) {
+            mFingerprintHelper.cancel();
+        }
     }
 
     private void showAuthorizedMode() {
@@ -371,5 +417,50 @@ public class SampleActivity extends AppCompatActivity {
         } else {
             return getResources().getColor(color);
         }
+    }
+
+
+    public class FingerprintHelper extends FingerprintManagerCompat.AuthenticationCallback {
+        private Context mContext;
+        private CancellationSignal mCancellationSignal;
+
+        FingerprintHelper(Context context) {
+            mContext = context;
+        }
+
+        void startAuth(FingerprintManagerCompat.CryptoObject cryptoObject) {
+            mCancellationSignal = new CancellationSignal();
+            FingerprintManagerCompat manager = FingerprintManagerCompat.from(mContext);
+            manager.authenticate(cryptoObject, 0, mCancellationSignal, this, null);
+        }
+
+        void cancel() {
+            if (mCancellationSignal != null) {
+                mCancellationSignal.cancel();
+            }
+        }
+
+        @Override
+        public void onAuthenticationError(int errMsgId, CharSequence errString) {
+            Toast.makeText(mContext, errString, Toast.LENGTH_SHORT).show();
+        }
+
+        @Override
+        public void onAuthenticationHelp(int helpMsgId, CharSequence helpString) {
+            Toast.makeText(mContext, helpString, Toast.LENGTH_SHORT).show();
+        }
+
+        @Override
+        public void onAuthenticationSucceeded(FingerprintManagerCompat.AuthenticationResult result) {
+            Cipher cipher = result.getCryptoObject().getCipher();
+            Toast.makeText(mContext, "success", Toast.LENGTH_SHORT).show();
+            mEncryptionManager.setCipher(cipher);
+        }
+
+        @Override
+        public void onAuthenticationFailed() {
+            Toast.makeText(mContext, "try again", Toast.LENGTH_SHORT).show();
+        }
+
     }
 }
