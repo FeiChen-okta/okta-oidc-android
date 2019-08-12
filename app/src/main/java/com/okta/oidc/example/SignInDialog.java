@@ -64,6 +64,8 @@ public class SignInDialog extends DialogFragment {
 
         mPassword = view.findViewById(R.id.password);
         mUsername = view.findViewById(R.id.username);
+        mPassword.setText("ASDFfdsa12");
+        mUsername.setText("perceptor@gmail.com");
         Button signIn = view.findViewById(R.id.submit);
         signIn.setOnClickListener(v -> {
             if (mListener != null) {

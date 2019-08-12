@@ -45,15 +45,32 @@ android {
 }
 
 dependencies {
+    //implementation fileTree(dir: 'libs', include: ['*.jar'])
     implementation project(':library')
     implementation "androidx.fragment:fragment:${rootProject.browserVersion}"
     implementation 'androidx.annotation:annotation:' + rootProject.androidxLibVersion
     implementation "androidx.appcompat:appcompat:1.0.2"
 
     implementation "com.google.android.material:material:${rootProject.appcompatVersion}"
-    implementation 'com.okta.authn.sdk:okta-authn-sdk-api:0.3.0'
-    implementation 'com.okta.authn.sdk:okta-authn-sdk-impl:0.3.0'
-    implementation 'com.okta.sdk:okta-sdk-okhttp:1.4.1'
+
+    implementation files('libs/okta-sdk-api-1.5.2-android.jar')
+    implementation files('libs/okta-sdk-impl-1.5.2-android.jar')
+    implementation files('libs/okta-sdk-okhttp-1.5.2-android.jar')
+    implementation files('libs/okta-config-check-1.1.1-android.jar')
+
+    implementation files('libs/okta-authn-sdk-impl-1.0.1-SNAPSHOT-android.jar')
+    implementation files('libs/okta-authn-sdk-api-1.0.1-SNAPSHOT-android.jar')
+    implementation files('libs/okta-commons-lang-1.2.1-SNAPSHOT-android.jar')
+    implementation files('libs/desugared_java8_legacy_libs.jar')
+
+    implementation files('libs/slf4j-api-1.7.25.jar')
+    implementation files('libs/slf4j-simple-1.7.25.jar')
+    implementation files('libs/jackson-annotations-2.9.0.jar')
+    implementation files('libs/jackson-core-2.9.8.jar')
+    implementation files('libs/jackson-databind-2.9.8.jar')
+
+    implementation group: 'com.squareup.okhttp3', name: 'okhttp', version: '3.11.0'
+
     androidTestImplementation "androidx.browser:browser:${rootProject.browserVersion}"
     // Core library
     androidTestImplementation 'androidx.test:core:1.1.0'
