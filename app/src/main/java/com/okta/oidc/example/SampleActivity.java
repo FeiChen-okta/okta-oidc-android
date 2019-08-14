@@ -388,13 +388,13 @@ public class SampleActivity extends AppCompatActivity implements SignInDialog.Si
             mSignInDialog.show(ft, "signin");
         });
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        //if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             mAuthenticationClient = AuthenticationClients.builder()
-                    .setOrgUrl("https://samples-test.oktapreview.com")
+                    .setOrgUrl(BuildConfig.DISCOVERY_URI)
                     .build();
-        } else {
-            mSignInNative.setVisibility(View.GONE);
-        }
+//        } else {
+//            mSignInNative.setVisibility(View.GONE);
+//        }
 
         //Example of using JSON file to create config
         mOidcConfig = new OIDCConfig.Builder()
@@ -403,19 +403,19 @@ public class SampleActivity extends AppCompatActivity implements SignInDialog.Si
 
         //Example of config
         mOidcConfig = new OIDCConfig.Builder()
-                .clientId("0oajqehiy6p81NVzA0h7")
-                .redirectUri("com.oktapreview.samples-test:/callback")
-                .endSessionRedirectUri("com.oktapreview.samples-test:/logout")
-                .scopes("openid", "profile", "offline_access")
-                .discoveryUri("https://samples-test.oktapreview.com")
+                .clientId(BuildConfig.CLIENT_ID)
+                .redirectUri(BuildConfig.REDIRECT_URI)
+                .endSessionRedirectUri(BuildConfig.END_SESSION_URI)
+                .scopes(BuildConfig.SCOPES)
+                .discoveryUri(BuildConfig.DISCOVERY_URI)
                 .create();
 
         mOAuth2Config = new OIDCConfig.Builder()
-                .clientId("0oajqehiy6p81NVzA0h7")
-                .redirectUri("com.oktapreview.samples-test:/callback")
-                .endSessionRedirectUri("com.oktapreview.samples-test:/logout")
-                .scopes("openid", "profile", "offline_access")
-                .discoveryUri("https://samples-test.oktapreview.com/oauth2/default")
+                .clientId(BuildConfig.CLIENT_ID)
+                .redirectUri(BuildConfig.REDIRECT_URI)
+                .endSessionRedirectUri(BuildConfig.END_SESSION_URI)
+                .scopes(BuildConfig.SCOPES)
+                .discoveryUri(BuildConfig.DISCOVERY_URI + "/oauth2/default")
                 .create();
 
         //use custom connection factory
@@ -641,6 +641,36 @@ public class SampleActivity extends AppCompatActivity implements SignInDialog.Si
                             }
 
                             @Override
+                            public void handleMfaRequired(AuthenticationResponse mfaRequiredResponse) {
+                                super.handleMfaRequired(mfaRequiredResponse);
+                                Log.d("FEI", "handleMfaRequired");
+                            }
+
+                            @Override
+                            public void handleMfaEnroll(AuthenticationResponse mfaEnroll) {
+                                super.handleMfaEnroll(mfaEnroll);
+                                Log.d("FEI", "handleMfaEnroll");
+                            }
+
+                            @Override
+                            public void handleMfaEnrollActivate(AuthenticationResponse mfaEnrollActivate) {
+                                super.handleMfaEnrollActivate(mfaEnrollActivate);
+                                Log.d("FEI", "handleMfaEnrollActivate");
+                            }
+
+                            @Override
+                            public void handleMfaChallenge(AuthenticationResponse mfaChallengeResponse) {
+                                super.handleMfaChallenge(mfaChallengeResponse);
+                                Log.d("FEI", "handleMfaChallenge");
+                            }
+
+                            @Override
+                            public void handleUnauthenticated(AuthenticationResponse unauthenticatedResponse) {
+                                super.handleUnauthenticated(unauthenticatedResponse);
+                                Log.d("FEI", "handleUnauthenticated");
+                            }
+
+                            @Override
                             public void handleSuccess(AuthenticationResponse successResponse) {
                                 String sessionToken = successResponse.getSessionToken();
                                 mAuthClient.signIn(sessionToken, mPayload,
@@ -661,6 +691,36 @@ public class SampleActivity extends AppCompatActivity implements SignInDialog.Si
                                                 mTvStatus.setText(error);
                                             }
                                         });
+                            }
+
+                            @Override
+                            public void handlePasswordWarning(AuthenticationResponse passwordWarning) {
+                                super.handlePasswordWarning(passwordWarning);
+                                Log.d("FEI", "handlePasswordWarning");
+                            }
+
+                            @Override
+                            public void handlePasswordExpired(AuthenticationResponse passwordExpired) {
+                                super.handlePasswordExpired(passwordExpired);
+                                Log.d("FEI", "handlePasswordExpired");
+                            }
+
+                            @Override
+                            public void handleRecovery(AuthenticationResponse recovery) {
+                                super.handleRecovery(recovery);
+                                Log.d("FEI", "handleMfaRequired");
+                            }
+
+                            @Override
+                            public void handleRecoveryChallenge(AuthenticationResponse recoveryChallenge) {
+                                super.handleRecoveryChallenge(recoveryChallenge);
+                                Log.d("FEI", "handleRecoveryChallenge");
+                            }
+
+                            @Override
+                            public void handlePasswordReset(AuthenticationResponse passwordReset) {
+                                super.handlePasswordReset(passwordReset);
+                                Log.d("FEI", "handlePasswordReset");
                             }
                         });
             } catch (AuthenticationException e) {
